@@ -1,0 +1,11 @@
+{
+  "name": "english-coach",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Personal app to learn American English — vocabulary, grammar, tenses, business & technical English, with games and spaced repetition.",
+  "scripts": {
+    "test": "node tests/run-tests.js",
+    "start": "python3 -m http.server 5188"
+  },
+  "license": "MIT"
+}

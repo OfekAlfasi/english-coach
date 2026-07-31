@@ -1,0 +1,12 @@
+# OS
+.DS_Store
+
+# Logs / local server
+*.log
+
+# Editor
+.vscode/
+.idea/
+
+# Node (only if you ever add deps)
+node_modules/
