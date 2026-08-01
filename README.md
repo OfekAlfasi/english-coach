@@ -2,6 +2,8 @@
 
 A personal app to learn **American English** day-to-day — vocabulary, grammar, tenses, idioms & slang — built for a Hebrew speaker aiming for native-level fluency.
 
+**Repository:** `OfekAlfasi/english-coach` (private) · https://github.com/OfekAlfasi/english-coach
+
 Inspired by the best of the market: **Duolingo** (streaks, XP, spaced repetition, bite-sized games), **Babbel** (explicit grammar with Hebrew explanations), **Busuu** (CEFR-aligned A2→C1), and **Memrise** (native audio — here via built-in American text-to-speech).
 
 ## How to run
