@@ -64,7 +64,7 @@ EC.app = (function () {
       { id: "tutor", icon: "💬", label: "Tutor" },
       { id: "practice", icon: "🎮", label: "Practice" },
       { id: "review", icon: "🔁", label: "Review" },
-      { id: "reference", icon: "📖", label: "Reference" }
+      { id: "profile", icon: "👤", label: "Profile" }
     ];
     nav.innerHTML = "";
     items.forEach((it) => {
@@ -196,7 +196,7 @@ EC.app = (function () {
     quick.appendChild(quickCard("🔁", "Smart Review", EC.store.dueCount() + " words due", () => go("#/review")));
     quick.appendChild(quickCard("🎧", "Listening", "American accent drills", () => go("#/practice/listen")));
     quick.appendChild(quickCard("🃏", "Flashcards", "Fast vocab review", () => go("#/practice/flash")));
-    quick.appendChild(quickCard("🗽", "Idioms & Slang", "Sound like a local", () => go("#/practice/idioms")));
+    quick.appendChild(quickCard("📖", "Reference", "Look up tenses, rules, idioms", () => go("#/reference")));
     m.appendChild(el("div", "section-title", "Quick practice"));
     m.appendChild(quick);
 
@@ -727,7 +727,7 @@ EC.app = (function () {
     renderNav("profile");
     const m = mount();
     m.innerHTML = "";
-    m.appendChild(el("div", "page-title", "👤 Profiles"));
+    m.appendChild(el("div", "page-title", "👤 My Profile"));
     const active = EC.store.activeProfile();
 
     const card = el("div", "card profile-card");
@@ -740,13 +740,73 @@ EC.app = (function () {
       "</div>";
     m.appendChild(card);
 
+    // ---- progress dashboard ----
+    const s = EC.store.state;
+    const st = s.stats || { answersRight: 0, answersWrong: 0, lessonsDone: 0 };
+    const prog = curriculumProgress();
+    const acc =
+      st.answersRight + st.answersWrong
+        ? Math.round((st.answersRight / (st.answersRight + st.answersWrong)) * 100)
+        : 0;
+    const due = EC.store.dueCount();
+
+    // daily goal ring
+    const goalPct = Math.min(100, Math.round((s.todayXp / s.dailyGoal) * 100));
+    const goalCard = el("div", "card goal-card");
+    const ring = el("div", "ring");
+    ring.style.background = "conic-gradient(var(--brand) " + goalPct * 3.6 + "deg, var(--ring-bg) 0deg)";
+    ring.appendChild(el("div", "ring-inner", "<div class='ring-pct'>" + goalPct + "%</div><div class='ring-lbl'>today</div>"));
+    const goalText = el("div", "goal-text");
+    goalText.appendChild(el("div", "goal-xp", s.todayXp + " / " + s.dailyGoal + " XP today"));
+    goalText.appendChild(el("div", "goal-hint", "🔥 " + s.streak + "-day streak"));
+    const contBtn = el("button", "btn btn-cta", prog.next ? "▶ Continue learning" : "🔁 Review");
+    contBtn.onclick = () => (prog.next ? go("#/lesson/" + prog.next.lesson.id) : go("#/review"));
+    goalText.appendChild(contBtn);
+    goalCard.appendChild(ring);
+    goalCard.appendChild(goalText);
+    m.appendChild(goalCard);
+
+    // course progress
+    const po = el("div", "card progress-overview");
+    const poHead = el("div", "po-head");
+    poHead.innerHTML =
+      "<span class='po-badge' style='background:" + prog.currentUnit.color + "'>" + prog.currentUnit.level + "</span>" +
+      "<span class='po-unit'>" + esc(prog.currentUnit.title) + "</span>" +
+      "<span class='po-pct'>" + prog.pct + "%</span>";
+    po.appendChild(poHead);
+    const bar = el("div", "po-bar");
+    const fill = el("div", "po-fill");
+    fill.style.width = prog.pct + "%";
+    fill.style.background = prog.currentUnit.color;
+    bar.appendChild(fill);
+    po.appendChild(bar);
+    po.appendChild(el("div", "po-meta", prog.done + " of " + prog.total + " lessons complete"));
+    if (prog.next) po.appendChild(el("div", "po-next", "⏭️ Next up: <b>" + esc(prog.next.lesson.title) + "</b>"));
+    else po.appendChild(el("div", "po-next", "🏆 You finished the whole course!"));
+    m.appendChild(po);
+
+    // stat tiles
+    const statCard = el("div", "card stats-card");
+    statCard.appendChild(miniStat("⭐ " + s.xp, "total XP"));
+    statCard.appendChild(miniStat("🔥 " + s.streak, "day streak"));
+    statCard.appendChild(miniStat(acc + "%", "accuracy"));
+    m.appendChild(statCard);
+    const statCard2 = el("div", "card stats-card");
+    statCard2.appendChild(miniStat(st.lessonsDone + "/" + prog.total, "lessons"));
+    statCard2.appendChild(miniStat("🔁 " + due, "words due"));
+    statCard2.appendChild(miniStat("🎯 " + s.dailyGoal, "daily goal"));
+    m.appendChild(statCard2);
+
     const actions = el("div", "pf-actions");
     const edit = el("button", "btn btn-ghost", "✏️ Edit");
     edit.onclick = () => showProfileEditor(active);
     const create = el("button", "btn btn-ghost", "➕ New profile");
     create.onclick = () => showProfileEditor(null);
+    const settings = el("button", "btn btn-ghost", "⚙️ Settings");
+    settings.onclick = () => go("#/settings");
     actions.appendChild(edit);
     actions.appendChild(create);
+    actions.appendChild(settings);
     m.appendChild(actions);
 
     const profs = EC.store.profiles();
