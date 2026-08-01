@@ -1,47 +1,108 @@
-/* English Coach — AI tutor (Google Gemini, bring-your-own-key).
- * The API key is stored ONLY in this browser (localStorage) and calls go
- * straight from the browser to Google. No server, no cost to the app owner.
- * Get a free key at https://aistudio.google.com/app/apikey
+/* English Coach — AI tutor (bring-your-own-key, no server).
+ * Two providers you can choose from, both callable straight from the browser:
+ *   • OpenRouter — FREE models, no credit card (recommended).  https://openrouter.ai/keys
+ *   • Google Gemini — free tier varies by region/project.       https://aistudio.google.com/app/apikey
+ * The key is stored ONLY in this browser (localStorage).
  */
 window.EC = window.EC || {};
 
 EC.ai = (function () {
-  const KEY_STORE = "english-coach:ai";
-  const DEFAULT_MODEL = "gemini-2.0-flash";
-  const MODELS = [
-    { id: "gemini-2.0-flash", label: "Gemini 2.0 Flash (recommended)" },
-    { id: "gemini-2.0-flash-lite", label: "Gemini 2.0 Flash-Lite (cheapest)" },
-    { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash (smartest)" },
-    { id: "gemini-1.5-flash", label: "Gemini 1.5 Flash (older)" }
-  ];
+  const STORE = "english-coach:ai";
 
-  function cfg() {
-    try {
-      return JSON.parse(localStorage.getItem(KEY_STORE)) || {};
-    } catch (e) {
-      return {};
+  const PROVIDERS = {
+    openrouter: {
+      label: "OpenRouter — free, no card (recommended)",
+      keyUrl: "https://openrouter.ai/keys",
+      keyHint: "Sign up free with Google (no credit card). Create a key, paste it here. Use a model ending in “free”.",
+      keyPlaceholder: "Paste your OpenRouter key (sk-or-…)",
+      default: "meta-llama/llama-3.3-70b-instruct:free",
+      models: [
+        { id: "meta-llama/llama-3.3-70b-instruct:free", label: "Llama 3.3 70B — free (best)" },
+        { id: "google/gemini-2.0-flash-exp:free", label: "Gemini 2.0 Flash — free" },
+        { id: "deepseek/deepseek-chat-v3-0324:free", label: "DeepSeek V3 — free" },
+        { id: "meta-llama/llama-3.1-8b-instruct:free", label: "Llama 3.1 8B — free (fastest)" },
+        { id: "qwen/qwen-2.5-72b-instruct:free", label: "Qwen 2.5 72B — free" }
+      ]
+    },
+    gemini: {
+      label: "Google Gemini",
+      keyUrl: "https://aistudio.google.com/app/apikey",
+      keyHint: "Free tier can be limited (limit: 0) in some regions/projects. If it errors, use OpenRouter above.",
+      keyPlaceholder: "Paste your Gemini key (AIza… or AQ.…)",
+      default: "gemini-2.0-flash",
+      models: [
+        { id: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
+        { id: "gemini-2.0-flash-lite", label: "Gemini 2.0 Flash-Lite" },
+        { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
+        { id: "gemini-1.5-flash", label: "Gemini 1.5 Flash" }
+      ]
     }
-  }
+  };
+
   function saveCfg(c) {
     try {
-      localStorage.setItem(KEY_STORE, JSON.stringify(c));
+      localStorage.setItem(STORE, JSON.stringify(c));
     } catch (e) {}
   }
+  function cfg() {
+    let c;
+    try {
+      c = JSON.parse(localStorage.getItem(STORE)) || {};
+    } catch (e) {
+      c = {};
+    }
+    // migrate old flat {key, model} (Gemini-only) format
+    if (c.key && !c.providers) {
+      c = {
+        provider: "gemini",
+        providers: { gemini: { key: c.key, model: c.model || "gemini-2.0-flash" } }
+      };
+      saveCfg(c);
+    }
+    if (!c.providers) c.providers = {};
+    if (!c.provider) c.provider = "openrouter";
+    return c;
+  }
+
+  function getProvider() {
+    return cfg().provider;
+  }
+  function setProvider(p) {
+    const c = cfg();
+    c.provider = PROVIDERS[p] ? p : "openrouter";
+    saveCfg(c);
+  }
+  function providerInfo(p) {
+    return PROVIDERS[p || getProvider()];
+  }
+  function providerList() {
+    return Object.keys(PROVIDERS).map((id) => ({ id: id, label: PROVIDERS[id].label }));
+  }
+  function slot(c, p) {
+    p = p || c.provider;
+    if (!c.providers[p]) c.providers[p] = {};
+    return c.providers[p];
+  }
   function getKey() {
-    return cfg().key || "";
+    const c = cfg();
+    return slot(c).key || "";
   }
   function setKey(k) {
     const c = cfg();
-    c.key = (k || "").trim();
+    slot(c).key = (k || "").trim();
     saveCfg(c);
   }
   function getModel() {
-    return cfg().model || DEFAULT_MODEL;
+    const c = cfg();
+    return slot(c).model || providerInfo().default;
   }
   function setModel(m) {
     const c = cfg();
-    c.model = m || DEFAULT_MODEL;
+    slot(c).model = m || providerInfo().default;
     saveCfg(c);
+  }
+  function models() {
+    return providerInfo().models;
   }
   function hasKey() {
     return !!getKey();
@@ -50,8 +111,7 @@ EC.ai = (function () {
   function focusText() {
     const p = EC.store.activeProfile ? EC.store.activeProfile() : null;
     if (!p) return "general English";
-    const f = (p.focus && p.focus.length ? p.focus.join(", ") : "general English").toLowerCase();
-    return f;
+    return (p.focus && p.focus.length ? p.focus.join(", ") : "general English").toLowerCase();
   }
   function levelText() {
     const p = EC.store.activeProfile ? EC.store.activeProfile() : null;
@@ -87,66 +147,91 @@ EC.ai = (function () {
     );
   }
 
-  // history: [{role:'user'|'model', text}]
-  async function chat(history, mode) {
-    if (!hasKey()) throw new Error("NO_KEY");
-    const model = getModel();
-    const url =
-      "https://generativelanguage.googleapis.com/v1beta/models/" +
-      encodeURIComponent(model) +
-      ":generateContent";
-    // Gemini requires the conversation to start with a 'user' turn.
-    let hist = history;
-    const firstUser = hist.findIndex((m) => m.role === "user");
-    if (firstUser > 0) hist = hist.slice(firstUser);
+  async function readErr(res) {
+    let msg = "HTTP " + res.status;
+    try {
+      const err = await res.json();
+      if (err && err.error && err.error.message) msg = err.error.message;
+      else if (err && err.error && typeof err.error === "string") msg = err.error;
+      else if (err && err.message) msg = err.message;
+    } catch (e) {}
+    if (res.status === 401 || res.status === 403 || res.status === 400) throw new Error("BAD_KEY:" + msg);
+    if (res.status === 429 || res.status === 402) throw new Error("QUOTA:" + msg);
+    if (res.status === 404) throw new Error("NO_MODEL:" + msg);
+    throw new Error(msg);
+  }
+
+  // ---- Google Gemini ----
+  async function geminiCall(history, mode) {
+    const url = "https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(getModel()) + ":generateContent";
     const body = {
       systemInstruction: { parts: [{ text: systemPrompt(mode) }] },
-      contents: hist.map((m) => ({ role: m.role, parts: [{ text: m.text }] })),
+      contents: history.map((m) => ({ role: m.role, parts: [{ text: m.text }] })),
       generationConfig: { temperature: 0.8, maxOutputTokens: 400, topP: 0.95 }
     };
     let res;
     try {
       res = await fetch(url, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          // recommended header auth — works for both AIza… and newer AQ.… keys
-          "x-goog-api-key": getKey()
-        },
+        headers: { "Content-Type": "application/json", "x-goog-api-key": getKey() },
         body: JSON.stringify(body)
       });
     } catch (e) {
       throw new Error("NETWORK");
     }
-    if (!res.ok) {
-      let msg = "HTTP " + res.status;
-      try {
-        const err = await res.json();
-        if (err && err.error && err.error.message) msg = err.error.message;
-      } catch (e) {}
-      if (res.status === 400 || res.status === 403) throw new Error("BAD_KEY:" + msg);
-      if (res.status === 429) throw new Error("QUOTA:" + msg);
-      if (res.status === 404) throw new Error("NO_MODEL:" + msg);
-      throw new Error(msg);
-    }
+    if (!res.ok) return readErr(res);
     const data = await res.json();
     const text =
-      data &&
-      data.candidates &&
-      data.candidates[0] &&
-      data.candidates[0].content &&
+      data && data.candidates && data.candidates[0] && data.candidates[0].content &&
       data.candidates[0].content.parts &&
       data.candidates[0].content.parts.map((p) => p.text || "").join("").trim();
     if (!text) throw new Error("EMPTY");
     return text;
   }
 
-  // quick sanity check used by the "Test connection" button
+  // ---- OpenRouter (OpenAI-compatible) ----
+  async function openrouterCall(history, mode) {
+    const url = "https://openrouter.ai/api/v1/chat/completions";
+    const messages = [{ role: "system", content: systemPrompt(mode) }].concat(
+      history.map((m) => ({ role: m.role === "model" ? "assistant" : "user", content: m.text }))
+    );
+    const body = { model: getModel(), messages: messages, temperature: 0.8, max_tokens: 400 };
+    let res;
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer " + getKey(),
+          "HTTP-Referer": location.origin,
+          "X-Title": "English Coach"
+        },
+        body: JSON.stringify(body)
+      });
+    } catch (e) {
+      throw new Error("NETWORK");
+    }
+    if (!res.ok) return readErr(res);
+    const data = await res.json();
+    const text = data && data.choices && data.choices[0] && data.choices[0].message && (data.choices[0].message.content || "").trim();
+    if (!text) throw new Error("EMPTY");
+    return text;
+  }
+
+  // history: [{role:'user'|'model', text}]
+  async function chat(history, mode) {
+    if (!hasKey()) throw new Error("NO_KEY");
+    // conversation must start with a user turn
+    let hist = history;
+    const firstUser = hist.findIndex((m) => m.role === "user");
+    if (firstUser > 0) hist = hist.slice(firstUser);
+    return getProvider() === "gemini" ? geminiCall(hist, mode) : openrouterCall(hist, mode);
+  }
+
   async function test() {
     return chat([{ role: "user", text: "Say 'ready' in one word." }], "voice");
   }
 
-  // strip written corrections / markdown so the spoken reply sounds natural
   function speakable(text) {
     return text
       .replace(/📝[\s\S]*$/m, "")
@@ -156,5 +241,10 @@ EC.ai = (function () {
       .trim();
   }
 
-  return { getKey, setKey, hasKey, getModel, setModel, MODELS, chat, test, speakable };
+  return {
+    getKey, setKey, hasKey,
+    getProvider, setProvider, providerInfo, providerList,
+    getModel, setModel, models,
+    chat, test, speakable
+  };
 })();

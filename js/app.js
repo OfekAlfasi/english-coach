@@ -486,7 +486,7 @@ EC.app = (function () {
 
     const aiCard = el("div", "card");
     aiCard.appendChild(el("div", "set-label", "AI Tutor key"));
-    aiCard.appendChild(el("div", "muted", EC.ai.hasKey() ? "✅ Gemini key connected." : "No key yet — the AI tutor is locked."));
+    aiCard.appendChild(el("div", "muted", EC.ai.hasKey() ? "✅ AI key connected." : "No key yet — the AI tutor is locked."));
     const aiBtn = el("button", "btn btn-ghost", EC.ai.hasKey() ? "💬 Open AI Tutor" : "🔑 Connect AI key");
     aiBtn.onclick = () => go("#/tutor");
     aiCard.appendChild(aiBtn);
@@ -857,40 +857,70 @@ EC.app = (function () {
   // ---------- AI tutor ----------
   function buildKeySetup(onDone) {
     const card = el("div", "card");
-    card.appendChild(el("div", "set-label", "Connect your free AI key"));
-    card.appendChild(
-      el("div", "muted", "The AI tutor runs on Google Gemini. Grab a free key (about 1 minute) and paste it below — it's stored only on this device.")
-    );
-    const link = el("a", "link-btn", "🔗 Get a free Gemini key");
-    link.href = "https://aistudio.google.com/app/apikey";
-    link.target = "_blank";
-    link.rel = "noopener";
-    card.appendChild(link);
-    const input = el("input", "form-input");
-    input.type = "password";
-    input.placeholder = "Paste your Gemini API key";
-    input.value = EC.ai.getKey();
-    card.appendChild(input);
+    card.appendChild(el("div", "set-label", "Connect a free AI key"));
+    card.appendChild(el("div", "muted", "Pick a provider, paste a key. It's stored only on this device."));
 
-    card.appendChild(el("label", "form-label", "Model"));
-    const sel = el("select", "form-input");
-    EC.ai.MODELS.forEach((mo) => {
+    // provider selector
+    card.appendChild(el("label", "form-label", "Provider"));
+    const provSel = el("select", "form-input");
+    EC.ai.providerList().forEach((pr) => {
       const o = document.createElement("option");
-      o.value = mo.id;
-      o.textContent = mo.label;
-      if (mo.id === EC.ai.getModel()) o.selected = true;
-      sel.appendChild(o);
+      o.value = pr.id;
+      o.textContent = pr.label;
+      if (pr.id === EC.ai.getProvider()) o.selected = true;
+      provSel.appendChild(o);
     });
-    sel.onchange = () => EC.ai.setModel(sel.value);
-    card.appendChild(sel);
+    card.appendChild(provSel);
+
+    // dynamic section (link, hint, key, model) re-renders on provider change
+    const dyn = el("div", "key-dyn");
+    card.appendChild(dyn);
 
     const status = el("div", "key-status");
     const test = el("button", "btn btn-ghost", "🔌 Test connection");
+    const save = el("button", "btn btn-cta", "Save & continue");
+
+    function renderDyn() {
+      const info = EC.ai.providerInfo();
+      dyn.innerHTML = "";
+      const link = el("a", "link-btn", "🔗 Get a free key");
+      link.href = info.keyUrl;
+      link.target = "_blank";
+      link.rel = "noopener";
+      dyn.appendChild(link);
+      dyn.appendChild(el("div", "muted key-hint", info.keyHint));
+
+      const input = el("input", "form-input key-input");
+      input.type = "password";
+      input.placeholder = info.keyPlaceholder;
+      input.value = EC.ai.getKey();
+      input.oninput = () => EC.ai.setKey(input.value);
+      dyn.appendChild(input);
+
+      dyn.appendChild(el("label", "form-label", "Model"));
+      const sel = el("select", "form-input");
+      EC.ai.models().forEach((mo) => {
+        const o = document.createElement("option");
+        o.value = mo.id;
+        o.textContent = mo.label;
+        if (mo.id === EC.ai.getModel()) o.selected = true;
+        sel.appendChild(o);
+      });
+      sel.onchange = () => EC.ai.setModel(sel.value);
+      dyn.appendChild(sel);
+      status.className = "key-status";
+      status.textContent = "";
+    }
+
+    provSel.onchange = () => {
+      EC.ai.setProvider(provSel.value);
+      renderDyn();
+    };
+
     test.onclick = async () => {
-      EC.ai.setKey(input.value);
-      EC.ai.setModel(sel.value);
       if (!EC.ai.hasKey()) {
-        input.classList.add("err");
+        status.className = "key-status bad";
+        status.textContent = "Paste a key first.";
         return;
       }
       status.className = "key-status";
@@ -906,14 +936,15 @@ EC.app = (function () {
       }
       test.disabled = false;
     };
-
-    const save = el("button", "btn btn-cta", "Save & continue");
     save.onclick = () => {
-      EC.ai.setKey(input.value);
-      EC.ai.setModel(sel.value);
       if (EC.ai.hasKey()) onDone();
-      else input.classList.add("err");
+      else {
+        status.className = "key-status bad";
+        status.textContent = "Paste a key first.";
+      }
     };
+
+    renderDyn();
     card.appendChild(test);
     card.appendChild(status);
     card.appendChild(save);
@@ -975,9 +1006,8 @@ EC.app = (function () {
     if (msg.indexOf("BAD_KEY") === 0) return "⚠️ That API key was rejected. Check it in Tutor settings.";
     if (msg.indexOf("QUOTA") === 0)
       return (
-        "⚠️ Your Google project is out of quota (free-tier limit is 0 for this model). " +
-        "Fix it by enabling pay-as-you-go billing in Google AI Studio (it's fractions of a cent per message), " +
-        "or open Tutor → Change AI key and pick a different model."
+        "⚠️ This provider is out of quota right now. Open Tutor → Change AI key and switch the Provider to " +
+        "“OpenRouter — free” (or pick another free model). Free models also have short per-minute limits — wait a few seconds and retry."
       );
     if (msg.indexOf("NO_MODEL") === 0)
       return "⚠️ That model isn't available for your key. Open Tutor → Change AI key and choose another model.";
