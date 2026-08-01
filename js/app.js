@@ -1002,15 +1002,27 @@ EC.app = (function () {
 
   function aiErr(err) {
     const msg = String((err && err.message) || err);
-    if (msg === "NO_KEY") return "⚠️ Add your Gemini API key first (Tutor → Change AI key).";
-    if (msg.indexOf("BAD_KEY") === 0) return "⚠️ That API key was rejected. Check it in Tutor settings.";
+    const detail = (p) => {
+      const i = msg.indexOf(p);
+      const d = i === 0 ? msg.slice(p.length) : "";
+      return d ? " (" + d.slice(0, 160) + ")" : "";
+    };
+    if (msg === "NO_KEY") return "⚠️ Add an AI key first (Tutor → Change AI key).";
+    if (msg.indexOf("BAD_KEY") === 0)
+      return (
+        "⚠️ Your key was rejected. Create a FRESH key, paste the whole thing (no spaces), and make sure the Provider " +
+        "matches the key (OpenRouter keys start with sk-or-…)." + detail("BAD_KEY:")
+      );
     if (msg.indexOf("QUOTA") === 0)
       return (
-        "⚠️ This provider is out of quota right now. Open Tutor → Change AI key and switch the Provider to " +
-        "“OpenRouter — free” (or pick another free model). Free models also have short per-minute limits — wait a few seconds and retry."
+        "⚠️ Out of quota / rate-limited. Free models allow only a few messages per minute — wait a few seconds and retry. " +
+        "You can also switch model in Tutor → Change AI key." + detail("QUOTA:")
       );
     if (msg.indexOf("NO_MODEL") === 0)
-      return "⚠️ That model isn't available for your key. Open Tutor → Change AI key and choose another model.";
+      return (
+        "⚠️ This free model isn't available for your account. On OpenRouter, open Settings → Privacy and enable free/" +
+        "training models, or pick another model in Tutor → Change AI key." + detail("NO_MODEL:")
+      );
     if (msg === "NETWORK") return "⚠️ Network error — check your connection and try again.";
     if (msg === "EMPTY") return "⚠️ I didn't get a reply. Try rephrasing.";
     return "⚠️ Something went wrong: " + msg;
