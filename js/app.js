@@ -15,6 +15,16 @@ EC.app = (function () {
     if (location.hash === hash) render();
     else location.hash = hash;
   }
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  // in-memory AI tutor chat histories, reset when the profile changes
+  let tutorHistories = { write: null, talk: null };
+  let tutorPid = null;
+  function clearTutor() {
+    tutorHistories = { write: null, talk: null };
+  }
 
   // ---------- top bar ----------
   function renderTopbar() {
@@ -29,6 +39,12 @@ EC.app = (function () {
     stats.appendChild(pill("⭐", s.xp, "XP"));
     const due = EC.store.dueCount();
     stats.appendChild(pill("🔁", due, "due"));
+    const p = EC.store.activeProfile();
+    const av = el("a", "top-avatar");
+    av.href = "#/profile";
+    av.title = (p ? p.name : "Profile") + " — profiles & leaderboard";
+    av.textContent = p ? p.avatar : "🙂";
+    stats.appendChild(av);
     bar.appendChild(brand);
     bar.appendChild(stats);
   }
@@ -45,6 +61,7 @@ EC.app = (function () {
     const items = [
       { id: "home", icon: "🏠", label: "Home" },
       { id: "learn", icon: "📚", label: "Learn" },
+      { id: "tutor", icon: "💬", label: "Tutor" },
       { id: "practice", icon: "🎮", label: "Practice" },
       { id: "review", icon: "🔁", label: "Review" },
       { id: "reference", icon: "📖", label: "Reference" }
@@ -163,6 +180,16 @@ EC.app = (function () {
     goalCard.appendChild(ring);
     goalCard.appendChild(goalText);
     m.appendChild(goalCard);
+
+    // ---- AI tutor banner ----
+    const tutorCard = el("div", "card tutor-banner");
+    tutorCard.innerHTML =
+      "<div class='tb-icon'>💬</div><div class='tb-text'><div class='tb-title'>AI Tutor</div>" +
+      "<div class='tb-sub'>" +
+      (EC.ai.hasKey() ? "Chat or talk with Coach, personalized to you" : "Practice real conversations — set up in 1 min") +
+      "</div></div><div class='tb-go'>›</div>";
+    tutorCard.onclick = () => go("#/tutor");
+    m.appendChild(tutorCard);
 
     // ---- quick practice ----
     const quick = el("div", "quick-grid");
@@ -448,6 +475,23 @@ EC.app = (function () {
     backBtn(m, "#/reference");
     m.appendChild(el("div", "page-title", "⚙️ Settings"));
 
+    const profCard = el("div", "card");
+    profCard.appendChild(el("div", "set-label", "Profile & competition"));
+    const ap = EC.store.activeProfile();
+    profCard.appendChild(el("div", "muted", "Signed in as " + ap.avatar + " " + esc(ap.name) + " · Level " + ap.level + "."));
+    const profBtn = el("button", "btn btn-ghost", "👤 Profiles & leaderboard");
+    profBtn.onclick = () => go("#/profile");
+    profCard.appendChild(profBtn);
+    m.appendChild(profCard);
+
+    const aiCard = el("div", "card");
+    aiCard.appendChild(el("div", "set-label", "AI Tutor key"));
+    aiCard.appendChild(el("div", "muted", EC.ai.hasKey() ? "✅ Gemini key connected." : "No key yet — the AI tutor is locked."));
+    const aiBtn = el("button", "btn btn-ghost", EC.ai.hasKey() ? "💬 Open AI Tutor" : "🔑 Connect AI key");
+    aiBtn.onclick = () => go("#/tutor");
+    aiCard.appendChild(aiBtn);
+    m.appendChild(aiCard);
+
     const goalCard = el("div", "card");
     goalCard.appendChild(el("div", "set-label", "Daily goal (XP)"));
     const goalRow = el("div", "goal-options");
@@ -501,6 +545,523 @@ EC.app = (function () {
     m.appendChild(dangerCard);
   }
 
+  // ---------- profiles ----------
+  const AVATARS = ["🦅", "😎", "🧑‍💻", "👩‍🎓", "🧑‍🎓", "🦉", "🚀", "🌟", "🐼", "🦊", "🐱", "🐧"];
+
+  function buildProfileForm(opts) {
+    const p = opts.profile;
+    const data = {
+      name: p ? p.name : "",
+      avatar: p ? p.avatar : "🦅",
+      level: p ? p.level : "A2",
+      focus: p ? (p.focus || []).slice() : [],
+      why: p ? p.why : "",
+      dailyGoal: opts.dailyGoal || 30
+    };
+    const wrap = el("div", "card profile-form");
+
+    wrap.appendChild(el("label", "form-label", "Your name"));
+    const name = el("input", "form-input");
+    name.type = "text";
+    name.placeholder = "e.g. Ofek";
+    name.value = data.name;
+    name.oninput = () => (data.name = name.value);
+    wrap.appendChild(name);
+
+    wrap.appendChild(el("label", "form-label", "Pick an avatar"));
+    const avRow = el("div", "emoji-row");
+    AVATARS.forEach((e) => {
+      const b = el("button", "emoji-opt" + (data.avatar === e ? " active" : ""), e);
+      b.onclick = () => {
+        data.avatar = e;
+        Array.from(avRow.children).forEach((x) => x.classList.remove("active"));
+        b.classList.add("active");
+      };
+      avRow.appendChild(b);
+    });
+    wrap.appendChild(avRow);
+
+    wrap.appendChild(el("label", "form-label", "Your current level"));
+    const lvRow = el("div", "goal-options");
+    [["A2", "Beginner+"], ["B1", "Intermediate"], ["B2", "Upper-int."], ["C1", "Advanced"]].forEach((pair) => {
+      const b = el("button", "chip" + (data.level === pair[0] ? " active" : ""), pair[0] + " · " + pair[1]);
+      b.onclick = () => {
+        data.level = pair[0];
+        Array.from(lvRow.children).forEach((x) => x.classList.remove("active"));
+        b.classList.add("active");
+      };
+      lvRow.appendChild(b);
+    });
+    wrap.appendChild(lvRow);
+
+    wrap.appendChild(el("label", "form-label", "What do you want to work on?"));
+    const fRow = el("div", "goal-options");
+    EC.store.FOCUS_OPTIONS.forEach((opt) => {
+      const b = el("button", "chip" + (data.focus.includes(opt) ? " active" : ""), opt);
+      b.onclick = () => {
+        const i = data.focus.indexOf(opt);
+        if (i >= 0) data.focus.splice(i, 1);
+        else data.focus.push(opt);
+        b.classList.toggle("active");
+      };
+      fRow.appendChild(b);
+    });
+    wrap.appendChild(fRow);
+
+    wrap.appendChild(el("label", "form-label", "Why are you learning? (optional)"));
+    const why = el("textarea", "form-input");
+    why.rows = 2;
+    why.placeholder = "e.g. sound native at work, travel, interviews…";
+    why.value = data.why;
+    why.oninput = () => (data.why = why.value);
+    wrap.appendChild(why);
+
+    wrap.appendChild(el("label", "form-label", "Daily goal"));
+    const gRow = el("div", "goal-options");
+    [10, 20, 30, 50].forEach((g) => {
+      const b = el("button", "chip" + (data.dailyGoal === g ? " active" : ""), g + " XP");
+      b.onclick = () => {
+        data.dailyGoal = g;
+        Array.from(gRow.children).forEach((x) => x.classList.remove("active"));
+        b.classList.add("active");
+      };
+      gRow.appendChild(b);
+    });
+    wrap.appendChild(gRow);
+
+    const submit = el("button", "btn btn-cta form-submit", opts.submitLabel || "Save");
+    submit.onclick = () => {
+      if (!data.name.trim()) {
+        name.focus();
+        name.classList.add("err");
+        return;
+      }
+      opts.onSubmit(data);
+    };
+    wrap.appendChild(submit);
+    if (opts.onCancel) {
+      const c = el("button", "btn btn-ghost", opts.cancelLabel || "Cancel");
+      c.onclick = opts.onCancel;
+      wrap.appendChild(c);
+    }
+    return wrap;
+  }
+
+  function viewOnboard() {
+    document.getElementById("nav").innerHTML = "";
+    const m = mount();
+    m.innerHTML = "";
+    const hero = el("div", "hero");
+    hero.appendChild(el("div", "hero-greet", "Welcome to English Coach 🦅"));
+    hero.appendChild(el("div", "hero-sub", "Let's set up your profile so I can tailor lessons and your AI tutor to you."));
+    m.appendChild(hero);
+    m.appendChild(
+      buildProfileForm({
+        profile: EC.store.activeProfile(),
+        dailyGoal: EC.store.state.dailyGoal,
+        submitLabel: "Start learning →",
+        onSubmit: (d) => {
+          EC.store.updateActiveProfile({
+            name: d.name.trim(),
+            avatar: d.avatar,
+            level: d.level,
+            focus: d.focus,
+            why: d.why,
+            onboarded: true
+          });
+          EC.store.setGoal(d.dailyGoal);
+          renderTopbar();
+          go("#/home");
+        }
+      })
+    );
+    const skip = el("button", "link-btn", "Skip for now");
+    skip.onclick = () => {
+      EC.store.updateActiveProfile({ onboarded: true });
+      renderTopbar();
+      go("#/home");
+    };
+    m.appendChild(skip);
+  }
+
+  function showProfileEditor(profile) {
+    const m = mount();
+    m.innerHTML = "";
+    m.appendChild(el("div", "page-title", profile ? "✏️ Edit profile" : "➕ New profile"));
+    m.appendChild(
+      buildProfileForm({
+        profile: profile,
+        dailyGoal: profile ? EC.store.state.dailyGoal : 30,
+        submitLabel: profile ? "Save changes" : "Create profile",
+        cancelLabel: "Cancel",
+        onCancel: () => viewProfile(),
+        onSubmit: (d) => {
+          if (profile) {
+            EC.store.updateActiveProfile({
+              name: d.name.trim(),
+              avatar: d.avatar,
+              level: d.level,
+              focus: d.focus,
+              why: d.why
+            });
+            EC.store.setGoal(d.dailyGoal);
+          } else {
+            EC.store.createProfile({
+              name: d.name.trim(),
+              avatar: d.avatar,
+              level: d.level,
+              focus: d.focus,
+              why: d.why,
+              dailyGoal: d.dailyGoal
+            });
+            clearTutor();
+          }
+          renderTopbar();
+          viewProfile();
+        }
+      })
+    );
+  }
+
+  function viewProfile() {
+    renderNav("profile");
+    const m = mount();
+    m.innerHTML = "";
+    m.appendChild(el("div", "page-title", "👤 Profiles"));
+    const active = EC.store.activeProfile();
+
+    const card = el("div", "card profile-card");
+    card.innerHTML =
+      "<div class='pf-av'>" + active.avatar + "</div>" +
+      "<div class='pf-info'><div class='pf-name'>" + esc(active.name) + "</div>" +
+      "<div class='pf-meta'>Level " + active.level +
+      (active.focus && active.focus.length ? " · " + active.focus.map(esc).join(", ") : "") + "</div>" +
+      (active.why ? "<div class='pf-why'>“" + esc(active.why) + "”</div>" : "") +
+      "</div>";
+    m.appendChild(card);
+
+    const actions = el("div", "pf-actions");
+    const edit = el("button", "btn btn-ghost", "✏️ Edit");
+    edit.onclick = () => showProfileEditor(active);
+    const create = el("button", "btn btn-ghost", "➕ New profile");
+    create.onclick = () => showProfileEditor(null);
+    actions.appendChild(edit);
+    actions.appendChild(create);
+    m.appendChild(actions);
+
+    const profs = EC.store.profiles();
+    if (profs.length > 1) {
+      m.appendChild(el("div", "section-title", "Switch profile"));
+      const list = el("div", "switch-list");
+      profs.forEach((p) => {
+        const row = el("div", "switch-row" + (p.id === active.id ? " active" : ""));
+        row.innerHTML =
+          "<span class='sw-av'>" + p.avatar + "</span><span class='sw-name'>" + esc(p.name) +
+          "</span><span class='sw-lv'>" + p.level + "</span>";
+        if (p.id !== active.id) {
+          row.onclick = () => {
+            EC.store.switchProfile(p.id);
+            clearTutor();
+            renderTopbar();
+            viewProfile();
+          };
+        } else {
+          row.appendChild(el("span", "sw-you", "you"));
+        }
+        list.appendChild(row);
+      });
+      m.appendChild(list);
+    }
+
+    m.appendChild(el("div", "section-title", "🏆 Leaderboard (this device)"));
+    const lb = EC.store.leaderboard();
+    const lbCard = el("div", "card lb-card");
+    const medals = ["🥇", "🥈", "🥉"];
+    lb.forEach((r, i) => {
+      const row = el("div", "lb-row" + (r.id === active.id ? " me" : ""));
+      row.innerHTML =
+        "<span class='lb-rank'>" + (medals[i] || i + 1) + "</span>" +
+        "<span class='lb-av'>" + r.avatar + "</span>" +
+        "<span class='lb-name'>" + esc(r.name) + "</span>" +
+        "<span class='lb-stat'>⭐ " + r.xp + "</span>" +
+        "<span class='lb-stat'>🔥 " + r.streak + "</span>" +
+        "<span class='lb-stat'>🎯 " + r.accuracy + "%</span>";
+      lbCard.appendChild(row);
+    });
+    m.appendChild(lbCard);
+    m.appendChild(
+      el("div", "muted lb-note", "Add profiles for anyone sharing this device to compete. 🌍 Global competition across phones is coming next (cloud sync).")
+    );
+  }
+
+  // ---------- AI tutor ----------
+  function buildKeySetup(onDone) {
+    const card = el("div", "card");
+    card.appendChild(el("div", "set-label", "Connect your free AI key"));
+    card.appendChild(
+      el("div", "muted", "The AI tutor runs on Google Gemini. Grab a free key (about 1 minute) and paste it below — it's stored only on this device.")
+    );
+    const link = el("a", "link-btn", "🔗 Get a free Gemini key");
+    link.href = "https://aistudio.google.com/app/apikey";
+    link.target = "_blank";
+    link.rel = "noopener";
+    card.appendChild(link);
+    const input = el("input", "form-input");
+    input.type = "password";
+    input.placeholder = "Paste your Gemini API key";
+    input.value = EC.ai.getKey();
+    card.appendChild(input);
+    const save = el("button", "btn btn-cta", "Save key");
+    save.onclick = () => {
+      EC.ai.setKey(input.value);
+      if (EC.ai.hasKey()) onDone();
+      else input.classList.add("err");
+    };
+    card.appendChild(save);
+    return card;
+  }
+
+  function viewTutor() {
+    renderNav("tutor");
+    const m = mount();
+    m.innerHTML = "";
+    m.appendChild(el("div", "page-title", "💬 AI Tutor"));
+    m.appendChild(el("div", "page-sub", "Real conversations, personalized to your level and goals."));
+    if (!EC.ai.hasKey()) {
+      m.appendChild(buildKeySetup(() => viewTutor()));
+      return;
+    }
+    const grid = el("div", "quick-grid");
+    const w = el("div", "quick-card");
+    w.innerHTML =
+      "<div class='quick-icon'>✍️</div><div class='quick-title'>Writing Chat</div><div class='quick-sub'>Chat by text — I fix your grammar</div>";
+    w.onclick = () => go("#/tutor/write");
+    const t = el("div", "quick-card");
+    t.innerHTML =
+      "<div class='quick-icon'>🎙️</div><div class='quick-title'>Voice Talk</div><div class='quick-sub'>Speak with me out loud</div>";
+    t.onclick = () => go("#/tutor/talk");
+    grid.appendChild(w);
+    grid.appendChild(t);
+    m.appendChild(grid);
+    const change = el("button", "link-btn", "⚙️ Change AI key");
+    change.onclick = () => {
+      const mm = mount();
+      mm.innerHTML = "";
+      mm.appendChild(el("div", "page-title", "AI settings"));
+      mm.appendChild(buildKeySetup(() => viewTutor()));
+    };
+    m.appendChild(change);
+    m.appendChild(el("div", "muted lb-note", "Powered by your own free Google Gemini key, stored only on this device."));
+  }
+
+  function getHistory(mode) {
+    if (tutorPid !== EC.store.activeId()) {
+      clearTutor();
+      tutorPid = EC.store.activeId();
+    }
+    if (!tutorHistories[mode]) {
+      const name = EC.store.activeProfile().name;
+      const greet =
+        mode === "talk"
+          ? "Hey " + name + "! Let's chat out loud. Tap the mic and tell me about your day."
+          : "Hi " + name + "! I'm Coach. Write anything in English and I'll reply and fix your mistakes. What's on your mind?";
+      tutorHistories[mode] = [{ role: "model", text: greet, intro: true }];
+    }
+    return tutorHistories[mode];
+  }
+
+  function aiErr(err) {
+    const msg = String((err && err.message) || err);
+    if (msg === "NO_KEY") return "⚠️ Add your Gemini API key first (Tutor → Change AI key).";
+    if (msg.indexOf("BAD_KEY") === 0) return "⚠️ That API key was rejected. Check it in Tutor settings.";
+    if (msg === "NETWORK") return "⚠️ Network error — check your connection and try again.";
+    if (msg === "EMPTY") return "⚠️ I didn't get a reply. Try rephrasing.";
+    return "⚠️ Something went wrong: " + msg;
+  }
+  function formatMsg(t) {
+    return esc(t).replace(/\n/g, "<br>");
+  }
+
+  function viewTutorWrite() {
+    tutorChat("write");
+  }
+  function viewTutorTalk() {
+    tutorChat("talk");
+  }
+
+  function tutorChat(mode) {
+    const voice = mode === "talk";
+    renderNav("tutor");
+    const m = mount();
+    m.innerHTML = "";
+    if (!EC.ai.hasKey()) {
+      m.appendChild(el("div", "page-title", "💬 AI Tutor"));
+      m.appendChild(buildKeySetup(() => tutorChat(mode)));
+      return;
+    }
+    const history = getHistory(mode);
+    let pending = false;
+
+    const wrap = el("div", "chat-wrap");
+    const head = el("div", "chat-head");
+    const back = el("button", "back-btn", "← Tutor");
+    back.onclick = () => go("#/tutor");
+    head.appendChild(back);
+    head.appendChild(el("div", "chat-title", voice ? "🎙️ Voice Talk" : "✍️ Writing Chat"));
+    wrap.appendChild(head);
+
+    const msgs = el("div", "chat-msgs");
+    wrap.appendChild(msgs);
+
+    function renderMsgs() {
+      msgs.innerHTML = "";
+      history.forEach((msg) => {
+        const b = el("div", "bubble " + (msg.role === "user" ? "me" : "ai"));
+        const body = el("span", "bubble-text");
+        body.innerHTML = formatMsg(msg.text);
+        b.appendChild(body);
+        if (msg.role === "model" && !msg.intro) {
+          const sp = el("button", "bubble-speak", "🔊");
+          sp.onclick = () => EC.speech.speak(EC.ai.speakable(msg.text));
+          b.appendChild(sp);
+        }
+        msgs.appendChild(b);
+      });
+      if (pending) msgs.appendChild(el("div", "bubble ai typing", "Coach is typing…"));
+      msgs.scrollTop = msgs.scrollHeight;
+    }
+
+    async function send(text) {
+      text = (text || "").trim();
+      if (!text || pending) return;
+      history.push({ role: "user", text: text });
+      pending = true;
+      renderMsgs();
+      try {
+        const reply = await EC.ai.chat(
+          history.filter((x) => !x.intro).map((x) => ({ role: x.role, text: x.text })),
+          voice ? "voice" : "writing"
+        );
+        history.push({ role: "model", text: reply });
+        pending = false;
+        renderMsgs();
+        if (voice) EC.speech.speak(EC.ai.speakable(reply));
+      } catch (err) {
+        pending = false;
+        history.push({ role: "model", text: aiErr(err), intro: true });
+        renderMsgs();
+      }
+    }
+
+    const inputBar = el("div", "chat-input");
+    if (!voice) {
+      const ta = el("input", "chat-text");
+      ta.type = "text";
+      ta.placeholder = "Type in English…";
+      const sb = el("button", "chat-send", "➤");
+      sb.onclick = () => {
+        const v = ta.value;
+        ta.value = "";
+        send(v);
+      };
+      ta.onkeydown = (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          sb.onclick();
+        }
+      };
+      inputBar.appendChild(ta);
+      inputBar.appendChild(sb);
+    } else if (EC.speech.supportsRecognition()) {
+      const status = el("div", "voice-status", "Tap the mic to speak");
+      const mic = el("button", "mic-btn", "🎤");
+      let rec = null,
+        listening = false,
+        finalText = "";
+      mic.onclick = () => {
+        if (listening) {
+          if (rec) rec.stop();
+          return;
+        }
+        rec = EC.speech.createRecognition();
+        finalText = "";
+        listening = true;
+        mic.classList.add("live");
+        status.textContent = "Listening… tap to stop";
+        rec.onresult = (e) => {
+          let interim = "";
+          finalText = "";
+          for (let i = 0; i < e.results.length; i++) {
+            const r = e.results[i];
+            if (r.isFinal) finalText += r[0].transcript;
+            else interim += r[0].transcript;
+          }
+          status.textContent = finalText || interim || "…";
+        };
+        rec.onerror = (e) => {
+          status.textContent = "Mic error: " + (e.error || "try again");
+        };
+        rec.onend = () => {
+          listening = false;
+          mic.classList.remove("live");
+          const t = finalText.trim();
+          if (t) {
+            status.textContent = "Tap the mic to speak";
+            send(t);
+          } else {
+            status.textContent = "Didn't catch that — tap to try again";
+          }
+        };
+        try {
+          rec.start();
+        } catch (e) {
+          listening = false;
+          mic.classList.remove("live");
+          status.textContent = "Couldn't start mic";
+        }
+      };
+      const micWrap = el("div", "mic-wrap");
+      micWrap.appendChild(mic);
+      micWrap.appendChild(status);
+      inputBar.appendChild(micWrap);
+      const fb = el("input", "chat-text");
+      fb.type = "text";
+      fb.placeholder = "…or type instead";
+      fb.onkeydown = (e) => {
+        if (e.key === "Enter") {
+          const v = fb.value;
+          fb.value = "";
+          send(v);
+        }
+      };
+      inputBar.appendChild(fb);
+    } else {
+      inputBar.appendChild(
+        el("div", "muted", "🎤 Voice input needs Chrome/Android. You can still type and I'll speak my replies.")
+      );
+      const ta = el("input", "chat-text");
+      ta.type = "text";
+      ta.placeholder = "Type in English…";
+      const sb = el("button", "chat-send", "➤");
+      sb.onclick = () => {
+        const v = ta.value;
+        ta.value = "";
+        send(v);
+      };
+      ta.onkeydown = (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          sb.onclick();
+        }
+      };
+      inputBar.appendChild(ta);
+      inputBar.appendChild(sb);
+    }
+    wrap.appendChild(inputBar);
+    m.appendChild(wrap);
+    renderMsgs();
+  }
+
   // ---------- router ----------
   function render() {
     document.onkeydown = null; // clear session key handler
@@ -509,12 +1070,21 @@ EC.app = (function () {
     const parts = hash.replace(/^#\//, "").split("/");
     const route = parts[0] || "home";
     window.scrollTo(0, 0);
+    // force first-run onboarding until a profile is set up
+    if (EC.store.needsOnboarding() && route !== "onboard") return viewOnboard();
+    if (route === "onboard") return viewOnboard();
     if (route === "home") return viewHome();
     if (route === "learn") return viewLearn();
     if (route === "lesson") return viewLesson(parts[1]);
     if (route === "practice") return parts[1] ? viewPracticeMode(parts[1]) : viewPractice();
     if (route === "review") return viewReview();
     if (route === "reference") return viewReference();
+    if (route === "profile") return viewProfile();
+    if (route === "tutor") {
+      if (parts[1] === "write") return viewTutorWrite();
+      if (parts[1] === "talk") return viewTutorTalk();
+      return viewTutor();
+    }
     if (route === "ref") {
       if (parts[1] === "tenses") return viewRefTenses();
       if (parts[1] === "grammar") return viewRefGrammar();

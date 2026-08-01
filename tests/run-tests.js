@@ -264,6 +264,39 @@ group("Store: persistence round-trip", () => {
   check("lesson persisted", EC.store.isLessonDone("persist-1"));
 });
 
+group("Store: profiles + leaderboard", () => {
+  const startCount = EC.store.profiles().length;
+  const a = EC.store.activeProfile();
+  EC.store.updateActiveProfile({ name: "Ofek", level: "B2", focus: ["Technical"] });
+  check("active profile updated", EC.store.activeProfile().name === "Ofek");
+  EC.store.reset();
+  EC.store.addXp(100);
+  const xpA = EC.store.state.xp;
+
+  const p2 = EC.store.createProfile({ name: "Nitzan", level: "A2", avatar: "🌟" });
+  check("createProfile adds a profile", EC.store.profiles().length === startCount + 1);
+  check("createProfile switches active", EC.store.activeId() === p2.id);
+  check("new profile starts fresh", EC.store.state.xp === 0, "got " + EC.store.state.xp);
+  EC.store.addXp(30);
+
+  // isolation: switching back keeps each profile's own xp
+  EC.store.switchProfile(a.id);
+  check("profile A xp isolated", EC.store.state.xp === xpA, "got " + EC.store.state.xp);
+  EC.store.switchProfile(p2.id);
+  check("profile B xp isolated", EC.store.state.xp === 30, "got " + EC.store.state.xp);
+
+  const lb = EC.store.leaderboard();
+  check("leaderboard lists all profiles", lb.length === startCount + 1);
+  check("leaderboard sorted by xp desc", lb[0].xp >= lb[lb.length - 1].xp);
+
+  const removed = EC.store.deleteProfile(p2.id);
+  check("deleteProfile works", removed && EC.store.profiles().length === startCount);
+  check("cannot delete the last profile", (function () {
+    while (EC.store.profiles().length > 1) EC.store.deleteProfile(EC.store.profiles().find((p) => p.id !== EC.store.activeId()).id);
+    return EC.store.deleteProfile(EC.store.activeId()) === false;
+  })());
+});
+
 // ============ RESULTS ============
 console.log("\n" + "=".repeat(48));
 console.log("Passed: " + passed + "   Failed: " + failed);

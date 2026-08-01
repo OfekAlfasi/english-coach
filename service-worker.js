@@ -5,7 +5,7 @@
  *  - Navigations that fail offline fall back to the cached index.html.
  * Bump CACHE when you ship changes so clients pick them up.
  */
-const CACHE = "english-coach-v1";
+const CACHE = "english-coach-v2";
 
 const ASSETS = [
   "./",
@@ -21,6 +21,7 @@ const ASSETS = [
   "./js/data/curriculum.js",
   "./js/store.js",
   "./js/speech.js",
+  "./js/ai.js",
   "./js/games.js",
   "./js/app.js",
   "./icons/icon.svg",

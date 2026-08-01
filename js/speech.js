@@ -50,5 +50,20 @@ EC.speech = (function () {
     return !!synth;
   }
 
-  return { speak, supported };
+  // ---- speech recognition (speech-to-text) for Voice Talk ----
+  const Rec = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+  function supportsRecognition() {
+    return !!Rec;
+  }
+  function createRecognition() {
+    if (!Rec) return null;
+    const r = new Rec();
+    r.lang = "en-US";
+    r.interimResults = true;
+    r.maxAlternatives = 1;
+    r.continuous = false;
+    return r;
+  }
+
+  return { speak, supported, supportsRecognition, createRecognition };
 })();
