@@ -2,7 +2,15 @@
 
 A personal app to learn **American English** day-to-day — vocabulary, grammar, tenses, idioms & slang — built for a Hebrew speaker aiming for native-level fluency.
 
-**Repository:** `OfekAlfasi/english-coach` (private) · https://github.com/OfekAlfasi/english-coach
+### ▶️ Live app: **https://ofekalfasi.github.io/english-coach/**
+
+Open it on any phone or computer — no install required. To use it like a native app:
+
+- **iPhone / iPad (Safari):** tap **Share** → **Add to Home Screen**.
+- **Android (Chrome):** tap **⋮** menu → **Install app** / **Add to Home Screen**.
+- **Desktop (Chrome/Edge):** click the **Install** icon in the address bar.
+
+It then opens full-screen with its own icon and **works offline** after the first load. Your progress, streak, and review schedule are saved **on your own device** — no account needed.
 
 Inspired by the best of the market: **Duolingo** (streaks, XP, spaced repetition, bite-sized games), **Babbel** (explicit grammar with Hebrew explanations), **Busuu** (CEFR-aligned A2→C1), and **Memrise** (native audio — here via built-in American text-to-speech).
 
