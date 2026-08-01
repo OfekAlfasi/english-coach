@@ -83,8 +83,7 @@ EC.ai = (function () {
     const url =
       "https://generativelanguage.googleapis.com/v1beta/models/" +
       encodeURIComponent(model) +
-      ":generateContent?key=" +
-      encodeURIComponent(getKey());
+      ":generateContent";
     // Gemini requires the conversation to start with a 'user' turn.
     let hist = history;
     const firstUser = hist.findIndex((m) => m.role === "user");
@@ -98,7 +97,11 @@ EC.ai = (function () {
     try {
       res = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          // recommended header auth — works for both AIza… and newer AQ.… keys
+          "x-goog-api-key": getKey()
+        },
         body: JSON.stringify(body)
       });
     } catch (e) {
