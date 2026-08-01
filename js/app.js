@@ -59,37 +59,112 @@ EC.app = (function () {
   }
 
   // ---------- views ----------
+  function curriculumProgress() {
+    let total = 0,
+      done = 0,
+      next = null;
+    for (const u of EC.curriculum) {
+      for (const l of u.lessons) {
+        total++;
+        if (EC.store.isLessonDone(l.id)) done++;
+        else if (!next) next = { unit: u, lesson: l };
+      }
+    }
+    const currentUnit = next ? next.unit : EC.curriculum[EC.curriculum.length - 1];
+    return { total, done, pct: total ? Math.round((done / total) * 100) : 0, next, currentUnit };
+  }
+
   function viewHome() {
     renderNav("home");
     const s = EC.store.state;
+    const st = s.stats;
     const m = mount();
     m.innerHTML = "";
+    const prog = curriculumProgress();
+    const isNew = st.lessonsDone === 0 && s.xp === 0;
 
+    // ---- adaptive hero ----
     const hour = new Date().getHours();
     const greet = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
     const header = el("div", "hero");
-    header.appendChild(el("div", "hero-greet", greet + " 👋"));
-    header.appendChild(el("div", "hero-sub", "Let's sound more American today."));
+    if (isNew) {
+      header.appendChild(el("div", "hero-greet", "Welcome to English Coach 🦅"));
+      header.appendChild(el("div", "hero-sub", "Your goal: understand and speak American English like a native — built one short lesson a day."));
+    } else {
+      header.appendChild(el("div", "hero-greet", greet + " 👋"));
+      header.appendChild(
+        el(
+          "div",
+          "hero-sub",
+          "You're on <b>Level " + prog.currentUnit.level + "</b> · " + prog.done + "/" + prog.total + " lessons · 🔥 " + s.streak + "-day streak"
+        )
+      );
+    }
     m.appendChild(header);
 
-    // daily goal ring
+    // ---- "how it works" orientation (first-timers, or until dismissed) ----
+    if (isNew || !s.settings.hideIntro) {
+      const intro = el("div", "card intro-card");
+      intro.appendChild(el("div", "intro-title", "How it works"));
+      const rows = [
+        ["📚", "Learn", "Follow the path from A2 → C1: vocabulary, grammar & tenses."],
+        ["🎮", "Practice", "Quick games to drill what you've learned."],
+        ["🔁", "Review", "We resurface tricky words right before you'd forget them."],
+        ["📖", "Reference", "Look up any tense, rule, or idiom — with audio."]
+      ];
+      rows.forEach((r) => {
+        const row = el("div", "intro-row");
+        row.innerHTML = "<span class='intro-ic'>" + r[0] + "</span><span class='intro-tx'><b>" + r[1] + "</b> — " + r[2] + "</span>";
+        intro.appendChild(row);
+      });
+      intro.appendChild(el("div", "intro-goal", "🎯 <b>Daily goal:</b> " + s.dailyGoal + " XP (about one lesson). Practice every day to grow your 🔥 streak."));
+      const dismiss = el("button", "btn btn-ghost intro-dismiss", isNew ? "Let's start →" : "Got it, hide this");
+      dismiss.onclick = () => {
+        s.settings.hideIntro = true;
+        EC.store.save();
+        if (isNew && prog.next) go("#/lesson/" + prog.next.lesson.id);
+        else viewHome();
+      };
+      intro.appendChild(dismiss);
+      m.appendChild(intro);
+    }
+
+    // ---- where you stand (overall progress) ----
+    const po = el("div", "card progress-overview");
+    const poHead = el("div", "po-head");
+    poHead.innerHTML =
+      "<span class='po-badge' style='background:" + prog.currentUnit.color + "'>" + prog.currentUnit.level + "</span>" +
+      "<span class='po-unit'>" + prog.currentUnit.title + "</span>" +
+      "<span class='po-pct'>" + prog.pct + "%</span>";
+    po.appendChild(poHead);
+    const bar = el("div", "po-bar");
+    const fill = el("div", "po-fill");
+    fill.style.width = prog.pct + "%";
+    fill.style.background = prog.currentUnit.color;
+    bar.appendChild(fill);
+    po.appendChild(bar);
+    po.appendChild(el("div", "po-meta", prog.done + " of " + prog.total + " lessons complete across the whole course"));
+    if (prog.next) po.appendChild(el("div", "po-next", "⏭️ Next up: <b>" + prog.next.lesson.title + "</b>"));
+    else po.appendChild(el("div", "po-next", "🏆 You finished the whole course — keep reviewing to master it!"));
+    m.appendChild(po);
+
+    // ---- daily goal ring ----
     const goalPct = Math.min(100, Math.round((s.todayXp / s.dailyGoal) * 100));
     const goalCard = el("div", "card goal-card");
     const ring = el("div", "ring");
-    ring.style.background =
-      "conic-gradient(var(--brand) " + goalPct * 3.6 + "deg, var(--ring-bg) 0deg)";
-    ring.appendChild(el("div", "ring-inner", "<div class='ring-pct'>" + goalPct + "%</div><div class='ring-lbl'>daily goal</div>"));
+    ring.style.background = "conic-gradient(var(--brand) " + goalPct * 3.6 + "deg, var(--ring-bg) 0deg)";
+    ring.appendChild(el("div", "ring-inner", "<div class='ring-pct'>" + goalPct + "%</div><div class='ring-lbl'>today</div>"));
     const goalText = el("div", "goal-text");
     goalText.appendChild(el("div", "goal-xp", s.todayXp + " / " + s.dailyGoal + " XP today"));
-    goalText.appendChild(el("div", "goal-hint", "🔥 " + s.streak + "-day streak · keep it alive!"));
-    const contBtn = el("button", "btn btn-cta", "▶ Continue learning");
-    contBtn.onclick = () => go("#/learn");
+    goalText.appendChild(el("div", "goal-hint", goalPct >= 100 ? "✅ Daily goal reached — nice!" : "🔥 " + s.streak + "-day streak · finish a lesson to keep it alive"));
+    const contBtn = el("button", "btn btn-cta", prog.next ? "▶ Continue learning" : "🔁 Review");
+    contBtn.onclick = () => (prog.next ? go("#/lesson/" + prog.next.lesson.id) : go("#/review"));
     goalText.appendChild(contBtn);
     goalCard.appendChild(ring);
     goalCard.appendChild(goalText);
     m.appendChild(goalCard);
 
-    // quick actions
+    // ---- quick practice ----
     const quick = el("div", "quick-grid");
     quick.appendChild(quickCard("🔁", "Smart Review", EC.store.dueCount() + " words due", () => go("#/review")));
     quick.appendChild(quickCard("🎧", "Listening", "American accent drills", () => go("#/practice/listen")));
@@ -98,19 +173,11 @@ EC.app = (function () {
     m.appendChild(el("div", "section-title", "Quick practice"));
     m.appendChild(quick);
 
-    // continue path — next lesson
-    const next = nextLesson();
-    if (next) {
-      m.appendChild(el("div", "section-title", "Up next"));
-      m.appendChild(lessonRow(next.unit, next.lesson));
-    }
-
-    // stats
-    const st = s.stats;
+    // ---- stats ----
     const acc = st.answersRight + st.answersWrong ? Math.round((st.answersRight / (st.answersRight + st.answersWrong)) * 100) : 0;
     const statCard = el("div", "card stats-card");
     statCard.appendChild(miniStat(st.lessonsDone, "lessons"));
-    statCard.appendChild(miniStat(st.answersRight, "correct"));
+    statCard.appendChild(miniStat(s.xp, "total XP"));
     statCard.appendChild(miniStat(acc + "%", "accuracy"));
     m.appendChild(statCard);
   }
