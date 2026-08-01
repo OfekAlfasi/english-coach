@@ -871,12 +871,51 @@ EC.app = (function () {
     input.placeholder = "Paste your Gemini API key";
     input.value = EC.ai.getKey();
     card.appendChild(input);
-    const save = el("button", "btn btn-cta", "Save key");
+
+    card.appendChild(el("label", "form-label", "Model"));
+    const sel = el("select", "form-input");
+    EC.ai.MODELS.forEach((mo) => {
+      const o = document.createElement("option");
+      o.value = mo.id;
+      o.textContent = mo.label;
+      if (mo.id === EC.ai.getModel()) o.selected = true;
+      sel.appendChild(o);
+    });
+    sel.onchange = () => EC.ai.setModel(sel.value);
+    card.appendChild(sel);
+
+    const status = el("div", "key-status");
+    const test = el("button", "btn btn-ghost", "🔌 Test connection");
+    test.onclick = async () => {
+      EC.ai.setKey(input.value);
+      EC.ai.setModel(sel.value);
+      if (!EC.ai.hasKey()) {
+        input.classList.add("err");
+        return;
+      }
+      status.className = "key-status";
+      status.textContent = "Testing…";
+      test.disabled = true;
+      try {
+        await EC.ai.test();
+        status.className = "key-status ok";
+        status.textContent = "✅ Connected! Your tutor is ready.";
+      } catch (err) {
+        status.className = "key-status bad";
+        status.textContent = aiErr(err);
+      }
+      test.disabled = false;
+    };
+
+    const save = el("button", "btn btn-cta", "Save & continue");
     save.onclick = () => {
       EC.ai.setKey(input.value);
+      EC.ai.setModel(sel.value);
       if (EC.ai.hasKey()) onDone();
       else input.classList.add("err");
     };
+    card.appendChild(test);
+    card.appendChild(status);
     card.appendChild(save);
     return card;
   }
@@ -934,6 +973,14 @@ EC.app = (function () {
     const msg = String((err && err.message) || err);
     if (msg === "NO_KEY") return "⚠️ Add your Gemini API key first (Tutor → Change AI key).";
     if (msg.indexOf("BAD_KEY") === 0) return "⚠️ That API key was rejected. Check it in Tutor settings.";
+    if (msg.indexOf("QUOTA") === 0)
+      return (
+        "⚠️ Your Google project is out of quota (free-tier limit is 0 for this model). " +
+        "Fix it by enabling pay-as-you-go billing in Google AI Studio (it's fractions of a cent per message), " +
+        "or open Tutor → Change AI key and pick a different model."
+      );
+    if (msg.indexOf("NO_MODEL") === 0)
+      return "⚠️ That model isn't available for your key. Open Tutor → Change AI key and choose another model.";
     if (msg === "NETWORK") return "⚠️ Network error — check your connection and try again.";
     if (msg === "EMPTY") return "⚠️ I didn't get a reply. Try rephrasing.";
     return "⚠️ Something went wrong: " + msg;

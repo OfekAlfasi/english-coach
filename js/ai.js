@@ -8,6 +8,12 @@ window.EC = window.EC || {};
 EC.ai = (function () {
   const KEY_STORE = "english-coach:ai";
   const DEFAULT_MODEL = "gemini-2.0-flash";
+  const MODELS = [
+    { id: "gemini-2.0-flash", label: "Gemini 2.0 Flash (recommended)" },
+    { id: "gemini-2.0-flash-lite", label: "Gemini 2.0 Flash-Lite (cheapest)" },
+    { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash (smartest)" },
+    { id: "gemini-1.5-flash", label: "Gemini 1.5 Flash (older)" }
+  ];
 
   function cfg() {
     try {
@@ -31,6 +37,11 @@ EC.ai = (function () {
   }
   function getModel() {
     return cfg().model || DEFAULT_MODEL;
+  }
+  function setModel(m) {
+    const c = cfg();
+    c.model = m || DEFAULT_MODEL;
+    saveCfg(c);
   }
   function hasKey() {
     return !!getKey();
@@ -114,6 +125,8 @@ EC.ai = (function () {
         if (err && err.error && err.error.message) msg = err.error.message;
       } catch (e) {}
       if (res.status === 400 || res.status === 403) throw new Error("BAD_KEY:" + msg);
+      if (res.status === 429) throw new Error("QUOTA:" + msg);
+      if (res.status === 404) throw new Error("NO_MODEL:" + msg);
       throw new Error(msg);
     }
     const data = await res.json();
@@ -128,6 +141,11 @@ EC.ai = (function () {
     return text;
   }
 
+  // quick sanity check used by the "Test connection" button
+  async function test() {
+    return chat([{ role: "user", text: "Say 'ready' in one word." }], "voice");
+  }
+
   // strip written corrections / markdown so the spoken reply sounds natural
   function speakable(text) {
     return text
@@ -138,5 +156,5 @@ EC.ai = (function () {
       .trim();
   }
 
-  return { getKey, setKey, hasKey, getModel, chat, speakable };
+  return { getKey, setKey, hasKey, getModel, setModel, MODELS, chat, test, speakable };
 })();

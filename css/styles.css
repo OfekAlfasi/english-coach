@@ -381,3 +381,9 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 .tb-title { font-weight: 800; font-size: 17px; }
 .tb-sub { color: var(--muted); font-size: 13px; }
 .tb-go { font-size: 30px; color: var(--brand-dark); font-weight: 800; }
+
+/* AI key test status */
+.key-status { font-size: 14px; margin: 4px 0 2px; min-height: 18px; }
+.key-status.ok { color: var(--brand-dark); font-weight: 700; }
+.key-status.bad { color: var(--bad); }
+select.form-input { appearance: auto; background: #fff; }
